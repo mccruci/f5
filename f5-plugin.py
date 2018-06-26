@@ -257,7 +257,7 @@ class OID(object):
         """
         ris = ''
         #if self.valoreSoglia == 0 :
-        print valore_rilevato
+        #print valore_rilevato
         if valore_rilevato == 0 :
             ris = 'Normal'
         #elif self.valoreSoglia == 1:
@@ -469,7 +469,10 @@ class OID(object):
                             oid = k.split(oid)
                             mib = oid[1][1:]   #trovo la mib da confrontare con altre
                             mib=mib.strip()
-                            key,value=self.associazioneOID_NUM(mib,la,nomeString)
+                            if self.custom.upper().strip() == 'ALBERO':
+                                key,value=self.associazioneOID_NUM(mib,la,nomeString)
+                            elif self.custom.upper().strip() == 'VIRTUAL':
+                                key, value = self.virtualServer(mib, la, nomeString)
                             lista[key]=value
 
         return lista   #dict
@@ -509,7 +512,7 @@ class OID(object):
 
         return 	key,value
 
-    def virtualServer(self,listaVirtual,nomeStringV):
+    def virtualServer(self,mib,listaVirtual,nomeStringV):
         """
         @param listaVirtual
         @param nomeStringV
@@ -521,21 +524,65 @@ class OID(object):
         OK_ = 0
         ERR_ = 0
         NOMI_NODO = ''
-        pass
+        #Virtual Server /Common/d1ce-certauth-443   OK - Client connections: 1, Rate: 0.12/sec, Virtual Server is up and available
+        for k,v in self.normOID.iteritems():
+            if mib in k:
+                pass
 
-    def chassisFan(self):
-        statoD={1:'Ok', 2:'Warning', 3:'Critical'}
+    def chassisFan(self,msgI):
+        statoD = {1: 'Ok', 2: 'Warning', 3: 'Critical'}
+        msgI = 'Fan Processor.'
         appS={}
         appF={}
+        res={}
         for k,v in self.normOID.iteritems():
             if k.find("sysChassisFanStatus") != -1:
                 k = k.split('.')
-                appS[k[1]] = v
+                k = int(k[1])
+                appS[k] = v
             elif k.find("sysChassisFanSpeed") != -1:
                 k = k.split('.')
-                appF[k[1]] = v
+                k = int(k[1])
+                appF[k] = v
 
-        msg = 'Fan Processor'
+        #FAN Processor 1 OK - speed is 9574 rpm
+        for k,v in appS.iteritems():
+            i = msgI+str(k)
+            msg = "{} - speed is {} rpm".format(statoD[int(v)].upper(),appF[k])
+            #msg = appF[k]  #scrivo solo il numero
+            res[i] = msg
+
+        return res
+
+    def chassisTemp(self):
+        #Temperature Chassis 1  OK - 25 Â°C
+        msgT = 'Temperature Chassis.'
+        appS={}
+        appF={}
+        res={}
+        for k,v in self.normOID.iteritems():
+            if k.find("INSERIRE LA STRINGA") != -1:
+                k = k.split('.')
+                k = int(k[1])
+                appS[k] = v
+            elif k.find("INSERIRE LA SECONDA STRINGA") != -1:
+                k = k.split('.')
+                k = int(k[1])
+                appF[k] = v
+
+        for k,v in appS.iteritems():
+            i = msgT+str(k)
+            #msg = "{} - {}".format(statoD[int(v)].upper(),appF[k])
+            msg = appF[k]
+            res[i] = msg
+
+        return res
+
+    def fileSystem(self):
+        pass
+
+    def interface(self):
+        pass
 
     ####### END CUSTOM ATTRIBUTE ##########
 
@@ -573,7 +620,13 @@ class OID(object):
         elif custom.upper().strip() == 'MEMORIA':
             self.memoriUsata()
         elif custom.upper().strip() == 'FAN':
-            pass
+            self.normOID = self.chassisFan()
+        elif custom.upper().strip() == 'TEMP':
+            self.normOID = self.chassisTemp()
+        elif custom.upper().strip() == 'FILESYSTEM':
+            self.normOID = self.fileSystem()
+        elif custom.upper().strip() == 'INTERFACE':
+            self.normOID = self.interface()
         else:
             pass
 
