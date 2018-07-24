@@ -225,6 +225,10 @@ class OID(object):
             vv = self.extractValueLoad(valore)
 	    stato = self.mib_stato + ' octetstring "' + str(self.findStato(self.controlloSoglia(vv))).strip()+'"'
 
+	elif 'Sync' in str(indice_oid):
+            index = self.mib_indice + ' octetstring "' + str(self.findIndex(indice_oid)).strip()+'"'
+            stato = self.mib_stato + ' octetstring "' + str(self.findStato(int(valore))).strip()+'"'
+
         else:
             index = self.mib_indice + ' octetstring "' + str(self.findIndex(indice_oid)).strip()+'"'
             stato = self.mib_stato + ' octetstring "' + str(self.findStato(stato_rilevato)).strip()+'"'
@@ -339,6 +343,8 @@ class OID(object):
              vv = self.extractValueLoad(valore)
              self.controlloSoglia(str(vv))
              res = res.replace('__FINDVALORESOGLIALOAD__', self.findValoreSoglia()).strip()
+        #elif indice_oid.find('Sync') != -1:
+        #     res = self.testo.replace('__VALORE__', str(valore))
         else:
             res = self.testo.replace('__VALORE__', str(valore))
             res = res.replace('__FINDVALORESOGLIA__', self.findValoreSoglia().strip())
@@ -417,7 +423,7 @@ class OID(object):
         if valore.find('is at') > 0 and old_valore.find('is at') > 0:
             OLD = self.controlloSoglia(self.extractValueLoad(old_valore))
             NEW = self.controlloSoglia(self.extractValueLoad(valore))
-            print('old {0} type {1}, new {2} type {3}'.format(OLD,type(OLD),NEW,type(NEW)))
+            #print('old {0} type {1}, new {2} type {3}'.format(OLD,type(OLD),NEW,type(NEW)))
             if OLD == NEW :
                 RIS = False
         elif valore.find('FileSystem:') > 0 and old_valore.find('FileSystem:') > 0:
@@ -680,7 +686,7 @@ class OID(object):
 
         for k,v in virtualName.iteritems():
             for ll in listaCommon:
-                print "virutual "+ ll
+                #print "virutual "+ ll
                 if ll.strip().find(v.strip()) != -1:
                     lista[v] = v+', State: '+listaErr[int(virtualAvailState[k])]+', ClientTotConns: '+virtualClientTotConns[k]+', ClinetCurConns: '+virtualClientCurConns[k]    
                     #lista[k] = v+', '+listaErr[int(virtualAvailState[k])]+', '+virtualClientTotConns[k]+' ,'+virtualClientCurConns[k]    
@@ -838,6 +844,36 @@ class OID(object):
 
         return appDesc
 
+    def sync(self):
+        """
+        metod per la sincronizzazione
+        {0:'Green', 1:'Yellow', 2:'Red', 3:'Blue', 4:'Gray', 5:'Black'}
+        si imposta
+        green = 0 / Normal
+        yellow = 1 / warning
+        red,blue,gray,black = 2 / Critical
+        """
+        COLOR = {0:'0', 1:'1', 2:'2', 3:'2', 4:'2', 5:'2'}
+        synID = {}
+        synCOL = {}
+        RIS = {}
+        for k,v in self.normOID.iteritems():
+            if k.find('sysCmSyncStatusId') != -1:
+                k = k.split('.')
+                k = 'Sync.'+k[1]
+                synID[k] = v
+
+            elif k.find('sysCmSyncStatusColor') != -1:
+                k = k.split('.')
+                k = 'Sync.'+k[1]
+                synCOL[k] = v.strip()
+                #print synCOL
+
+        for k,v in synID.iteritems():
+            RIS[k] = str(COLOR[int(synCOL[k])])
+        #print RIS
+        return RIS
+
 
 
     ####### END CUSTOM ATTRIBUTE ##########
@@ -848,10 +884,10 @@ class OID(object):
         -se per ragioni di sviluppo si vuole eseguire l'applicazione senza interrogare l'host remoto, 
 
         """
-        self.getOID()
-        self.normalOID()
+        #self.getOID()
+        #self.normalOID()
         #self.toCSV()
-        #self.fromCSV()
+        self.fromCSV()
         self.customLauncher(self.custom)
         self.checkDiff()
         for k,v in self.normOID.iteritems():
@@ -883,6 +919,8 @@ class OID(object):
             self.normOID = self.cpuLoad()
         elif custom.upper().strip() == 'STORAGE':    #ok
             self.normOID = self.storage()
+        elif custom.upper().strip() == 'SYNC':    #ok
+            self.normOID = self.sync()
         else:
             pass
 
@@ -909,7 +947,7 @@ class OID(object):
             w.writeheader()
             w.writerow(self.normOID)
 
-    def fromCSV(self,fileName='dirname_storage.csv'):
+    def fromCSV(self,fileName='dirname_sincronizzazione.csv'):
         """
         evita di dover fare una connessione di volta in volta per velocizzare la fase di creazione dei moduli
         @param fileName
