@@ -2,6 +2,7 @@ import subprocess
 import sys
 import os
 import csv
+import time
 from ConfigParser import SafeConfigParser
 from optparse import OptionParser
 
@@ -26,7 +27,8 @@ class OID(object):
         self.mib_voce 	 = '.1.3.6.1.4.1.9999.9999.200.6'
         self.mib_testo	 = '.1.3.6.1.4.1.9999.9999.200.7'
 
-        self.valoreSoglia = ''                      #usata per il messaggio dello stato di uscita
+        #self.old_valoreSoglia = ''                      #usata per il messaggio dello stato di uscita del valore trovato in cache
+        #self.valoreSoglia = ''                      #usata per il messaggio dello stato di uscita
         self.confronto = ['INTEGER','Unsigned32',]  #usata per normalizzare le mib con valore intero
         self.listaService = ''
         self.nomeStringa = ''
@@ -150,7 +152,7 @@ class OID(object):
                         RES = 3
                 else:
                     RES = 3
-            self.valoreSoglia = RES
+            #self.valoreSoglia = RES
             return int(RES)
         except  ValueError as e:
             RES = 3
@@ -169,7 +171,8 @@ class OID(object):
 	CMD = '/opt/OV/bin/nnmsnmpnotify.ovpl -v 2c "" -a {} {} {} {} {} {} {} {} {}'.format(self.fqdn, self.mib_generale, desc, index, value, soglia, stato, voce, testo)
         print CMD
         # ---INVIO TRAP RESET--- #
-        #r = subprocess.Popen([CMD],shell=True )# stdout=subprocess.PIPE,)
+        r = subprocess.Popen([CMD],shell=True )# stdout=subprocess.PIPE,)
+        time.sleep(2)
 
     def sendUpdateTrap(self,indice_oid,valore,stato_rilevato):
         """
@@ -181,7 +184,7 @@ class OID(object):
 	CMD = '/opt/OV/bin/nnmsnmpnotify.ovpl -v 2c "" -a {} {} {} {} {} {} {} {} {}'.format(self.fqdn, self.mib_generale, desc, index, value, soglia, stato, voce, testo)
         print CMD
         # ---INVIO TRAP ADD--- #
-        #r = subprocess.Popen([CMD],shell=True )# stdout=subprocess.PIPE,)
+        r = subprocess.Popen([CMD],shell=True )# stdout=subprocess.PIPE,)
 		
     def setNNMParamiter(self,indice_oid,valore,stato_rilevato):
         """
@@ -204,13 +207,14 @@ class OID(object):
         index = self.mib_indice
         stato = '""'
         if 'Load Balancing Pool' in str(indice_oid):
-            s = str(valore).split('-')
+            s = valore.split(' - ')
             stato = self.mib_stato + ' octetstring "' + str(s[0]).strip()+'"'
-            i = str(indice_oid).split('Pool')
+            i = indice_oid.split('.')
             index = self.mib_indice + ' octetstring "' + str(i[1]).strip()+'"'
 
-        elif 'Common' in str(indice_oid):
-            index = self.mib_indice + ' octetstring "' + str(indice_oid).strip()+'"'
+        elif 'Virtual Server' in str(indice_oid):
+            i = str(indice_oid).split('Virtual Server')
+            index = self.mib_indice + ' octetstring "' + str(i[1]).strip()+'"'
             s = str(valore).split('State:')
             s = s[1].split(',')
             s = s[0].strip()
@@ -220,6 +224,7 @@ class OID(object):
                 stato = self.mib_stato + ' octetstring "' + 'Critical"'
 
         elif 'FileSystem' in str(indice_oid):
+            index = self.mib_indice + ' octetstring "' + str(self.findIndex(indice_oid)).strip()+'"'
             vv = self.extractValueFileSystem(valore)
             stato = self.mib_stato + ' octetstring "' + str(self.findStato(self.controlloSoglia(vv))).strip()+'"'
 
@@ -230,28 +235,35 @@ class OID(object):
         elif 'Sync' in str(indice_oid):
             index = self.mib_indice + ' octetstring "' + str(self.findIndex(indice_oid)).strip()+'"'
             s = valore.split(',')
+            s = s[1].split(':')
             stato = self.mib_stato + ' octetstring "' + str(self.findStato(int(s[1]))).strip()+'"'
+
+        elif 'CurConns' in str(indice_oid): 
+            index = self.mib_indice + ' octetstring "' + str(indice_oid).strip()+'"'
+            stato = self.mib_stato + ' octetstring "' + str(self.findStato(stato_rilevato)).strip()+'"'
 
         else:
             index = self.mib_indice + ' octetstring "' + str(self.findIndex(indice_oid)).strip()+'"'
             stato = self.mib_stato + ' octetstring "' + str(self.findStato(stato_rilevato)).strip()+'"'
 
         value = self.mib_valore + ' octetstring "' + str(valore).strip()+'"'
-        soglia = self.mib_soglia + ' octetstring "' + str(self.findValoreSoglia()).strip()+'"'
+        soglia = self.mib_soglia + ' octetstring "' + str(self.findValoreSoglia(stato_rilevato)).strip()+'"'
         voce = self.mib_voce + ' octetstring "' + str(self.voce).strip()+'"'
         testo = self.mib_testo + ' octetstring "' + self.findTesto(valore,indice_oid,stato_rilevato) + '"'
 
 	return desc, index, value, soglia, stato, voce, testo 
 
-    def findValoreSoglia(self):
+    def findValoreSoglia(self,stato=''):
         """
         trova la soglia da prendere in cosiderazione
         @return : ritorna il valore della soglia warning o critical da prendere in cosiderazione
         """
         ris = ''
-        if self.valoreSoglia <= 1 :
+        #if self.valoreSoglia <= 1 :
+        if stato <= 1 :
             ris = self.warning
-        elif self.valoreSoglia == 2 :
+        #elif self.valoreSoglia == 2 :
+        elif stato == 2 :
             ris = self.critical
         else :
             pass
@@ -309,25 +321,37 @@ class OID(object):
         if valore.find('FileSystem') != -1:
             app = valore.split(',') 
             res = self.testo.replace('__FS__', str(app[0]))
+            res = res.replace('__FINDVALORESOGLIA__', self.findValoreSoglia(stato_rilevato).strip()+'%')
             res = res.replace('__PERCENTO__', app[3].strip())
             res = res.replace('__USATA__', app[1].strip())
             res = res.replace('__TOTALE__', app[2].strip())
-            res = res.replace('__FINDVALORESOGLIA__', self.findValoreSoglia().strip())
+        
+        elif indice_oid.find('Virtual Server') != -1:
+            res = self.testo.replace('__INDEX__', indice_oid)
+            res = res.replace('__VALORE__', str(valore))
 
         elif indice_oid.find('ssCpu') != -1:
             tipo = indice_oid.split('Cpu')
             res = self.testo.replace('__TIPO__',tipo[1])
             res = res.replace('__VALORE__', str(valore)+'%')
-            res = res.replace('__FINDVALORESOGLIA__', self.findValoreSoglia().strip())+'% )'
+            res = res.replace('__FINDVALORESOGLIA__', self.findValoreSoglia(stato_rilevato).strip())+'% )'
+        
+        elif indice_oid.find('CurConns') != -1:
+             tipo = 'Client connections'
+             if indice_oid.find('ssl') != -1:
+                 tipo = 'Client SSL connections'
+             res = self.testo.replace('__TIPO__',tipo)
+             res = res.replace('__VALORE__', str(valore))
+             res = res.replace('__FINDVALORESOGLIA__', self.findValoreSoglia(stato_rilevato).strip()) 
 
         elif indice_oid.find('CpuLoad') != -1:
              res = self.testo.replace('__VALORE__', str(valore))
              vv = self.extractValueLoad(valore)
              self.controlloSoglia(str(vv))
-             res = res.replace('__FINDVALORESOGLIALOAD__', self.findValoreSoglia()).strip()
+             res = res.replace('__FINDVALORESOGLIALOAD__', self.findValoreSoglia(stato_rilevato)).strip()
         else:
             res = self.testo.replace('__VALORE__', str(valore))
-            res = res.replace('__FINDVALORESOGLIA__', self.findValoreSoglia().strip())
+            res = res.replace('__FINDVALORESOGLIA__', self.findValoreSoglia(stato_rilevato).strip())
             res = res.replace('__NODO__', str(self.fqdn))
             if res.find('__INDEX__') != -1:
                 res = res.replace('__INDEX__', str(self.findIndex(indice_oid)).strip())
@@ -376,9 +400,10 @@ class OID(object):
                 self.sendUpdateTrap(indice_oid,valore,newStatus)
 
             elif oldStatus == 3 and newStatus == 3:			#sono nella condizione di avere una mib di carattere descrittivo
-                if self.controlloStatusUnknow(oldValore,valore):        #metodo per verifica testo
-                    self.sendResetTrap(indice_oid,oldValore,oldStatus)
-                    self.sendUpdateTrap(indice_oid,valore,newStatus)
+                 CHECK,OLD,NEW = self.controlloStatusUnknow(oldValore,valore)
+                 if CHECK:
+                    self.sendResetTrap(indice_oid,oldValore,OLD)
+                    self.sendUpdateTrap(indice_oid,valore,NEW)
             else:							#condzione 3.2
                 ### NON INVIO NULLA ###
                 pass
@@ -393,21 +418,49 @@ class OID(object):
         RIS = True
         OLD = ''
         NEW = ''
-        if valore.find('is at') > 0 and old_valore.find('is at') > 0:
+
+        if valore.find('is at') > 0 and old_valore.find('is at') > 0:				#Load
             OLD = self.controlloSoglia(self.extractValueLoad(old_valore))
             NEW = self.controlloSoglia(self.extractValueLoad(valore))
             if OLD == NEW :
                 RIS = False
-        elif valore.find('FileSystem:') > 0 and old_valore.find('FileSystem:') > 0:
+
+        elif valore.find('FileSystem:') != -1 and old_valore.find('FileSystem:') != -1:
             OLD = self.controlloSoglia(self.extractValueFileSystem(old_valore))
             NEW = self.controlloSoglia(self.extractValueFileSystem(valore))
             if OLD == NEW :
                 RIS = False
-        return RIS
+
+        elif valore.find('members are up') != -1 and old_valore.find('members are up') != -1:       #Load Balancing Pool
+            OLD = self.controlloSoglia(self.extractVirtualServer(old_valore))
+            NEW = self.controlloSoglia(self.extractVirtualServer(valore))
+            if OLD == NEW :
+                RIS = False
+
+        elif valore.find('ClientTotConns:') != -1 and old_valore.find('ClientTotConns:') != -1:     #Virtual Server
+            OLD = self.controlloSoglia(self.extractVirtualServer(old_valore))
+            NEW = self.controlloSoglia(self.extractVirtualServer(valore))
+            if OLD == NEW :
+                RIS = False
+
+        return RIS,OLD,NEW
 
     ######## END SEND NNM ########
     
     ######## START UTILITY ########
+    def extractBalancing(self,valore):
+        """
+        estraggo il valore dalla Load
+        @param valore
+        @return valore da controllare
+        """
+        RIS=3
+        if valore.find('members are up') != -1 :
+            #s = str(valore).split('members are up')
+            s = valore.split(' - ')
+            RIS = s[0].strip()
+
+        return str(RIS)
     def extractValueLoad(self,valore):
         """
         estraggo il valore dalla Load
@@ -419,6 +472,23 @@ class OID(object):
             s = str(valore).split('is at')
             v = float(s[1].strip())
             RIS = int(v)
+
+        return str(RIS)
+
+    def extractVirtualServer(self,valore):
+        """
+        estraggo il valore dalla Load
+        @param valore
+        @return valore da controllare
+        """
+        RIS=3
+        if valore.find('ClientTotConns:') != -1 :
+            s = str(valore).split('State:')
+            s = s[1].split(',')
+            if s[0].find('green') != -1:
+                RIS='Normal'
+            else:
+                RIS='Critical'
 
         return str(RIS)
 
@@ -502,7 +572,8 @@ class OID(object):
                         # aggiounogo k v su un dict di appoggio presa da normOID
                     self.changeOIDFile(k,v)
                     nnM.append([k,v])
-                    self.sendNNM(k,v)
+                    #self.sendNNM(k,v)
+                    #self.sendListaNNM(nnM)
                     writeF=True
 
             if writeF:          		#eseguo update del file e l'invio delle trap
@@ -597,7 +668,7 @@ class OID(object):
                         app = v.split(':')
                         NOMI_NODO = NOMI_NODO + app[1]+','
 
-        key = nomeString + ' ' +nomeAlbero
+        key = nomeString + '.' +nomeAlbero
 
         if OK_ > 0 and ERR_ <= 0 :
             value = "Normal - {} of {} members are up".format(OK_,contatore)
@@ -642,7 +713,8 @@ class OID(object):
         for k,v in virtualName.iteritems():
             for ll in listaCommon:
                 if ll.strip().find(v.strip()) != -1:
-                    lista[v] = v+', State: '+listaErr[int(virtualAvailState[k])]+', ClientTotConns: '+virtualClientTotConns[k]+', ClinetCurConns: '+virtualClientCurConns[k]    
+                    key = nomeString+v
+                    lista[key] = 'State: '+listaErr[int(virtualAvailState[k])]+', ClientTotConns: '+virtualClientTotConns[k]+', ClientCurConns: '+virtualClientCurConns[k]    
 
         return lista
 
@@ -652,7 +724,7 @@ class OID(object):
         @return k,v
         """
         statoD = {1: 'Ok', 2: 'Warning', 3: 'Critical'}
-        msgI = 'Fan Processor.'
+        msgI = 'FanSpeed.'
         appS={}
         appF={}
         res={}
@@ -828,7 +900,7 @@ class OID(object):
                 synCOL[k] = v.strip()
 
         for k,v in synID.iteritems():
-            RIS[k] = COLOR[int(synCOL[k])] +', '+str(COD_COLOR[int(synCOL[k])])
+            RIS[k] = str(COLOR[int(synCOL[k])]) + ', value read: ' + str(COD_COLOR[int(synCOL[k])])
 
         return RIS
 
@@ -841,7 +913,7 @@ class OID(object):
         self.getOID()
         self.normalOID()
         #self.toCSV()
-        #self.fromCSV()
+        #self.fromCSV('dirname_loadBalancing.csv')
         self.customLauncher(self.custom)
         self.checkDiff()
         for k,v in self.normOID.iteritems():
@@ -899,7 +971,7 @@ class OID(object):
             w.writeheader()
             w.writerow(self.normOID)
 
-    def fromCSV(self,fileName='dirname_sincronizzazione.csv'):
+    def fromCSV(self,fileName='dirname_virtual.csv'):
         """
         evita di dover fare una connessione di volta in volta per velocizzare la fase di creazione dei moduli
         @param fileName
