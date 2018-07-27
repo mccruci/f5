@@ -33,6 +33,8 @@ class OID(object):
         self.listaService = ''
         self.nomeStringa = ''
 
+        self.AppFQDN=''
+
     def setConf(self,configFile):
         """
         legge il file di configurazione
@@ -52,11 +54,13 @@ class OID(object):
         config.read(configFile)
 
         self.oid = self.checkMultiLIST(config.get('GENERAL','OID'))
-        self.fqdn = config.get('GENERAL','FQDN')
+        #self.fqdn = config.get('GENERAL','FQDN')
+        fqdn = config.get('GENERAL','FQDN')
         self.name = config.get('GENERAL','NAME')
         self.warning = config.get('GENERAL','WARNING')
         self.critical = config.get('GENERAL','CRITICAL')
-        self.tmp_file = config.get('GENERAL','TMP_FILE')
+        #self.tmp_file = config.get('GENERAL','TMP_FILE')
+        tmp_file = config.get('GENERAL','TMP_FILE')
         self.limite = config.get('GENERAL', 'LIMITE')
         self.voce = config.get('GENERAL', 'VOCE')
         self.testo = config.get('GENERAL', 'TESTO')
@@ -73,13 +77,30 @@ class OID(object):
         if config.has_option('GENERAL','NOMESTRINGA'):
            self.nomeStringa = config.get('GENERAL','NOMESTRINGA')    
 
-    def getOID(self):
+        self.tmp_file = []
+        self.fqdn = fqdn.split('\n')
+        for f in self.fqdn:
+            app = tmp_file.replace('NOMEFQDN',f)
+            self.tmp_file.append(app)
+        
+    def getTmp_file(self,fqdn):
+        """
+        @param fqdn
+        """
+        RIS = ''
+        for tmp in self.tmp_file:
+            if tmp.find(fqdn) != -1:
+                RIS = tmp
+        return RIS
+
+    def getOID(self,fqdn):
         """
         ottine il valore della oid, tramite nnmsnmpwalk.ovpl
         """
         try:
             for oid in self.oid:
-                r = subprocess.Popen(['nnmsnmpwalk.ovpl',self.fqdn,oid], stdout=subprocess.PIPE)
+                #r = subprocess.Popen(['nnmsnmpwalk.ovpl',self.fqdn,oid], stdout=subprocess.PIPE)
+                r = subprocess.Popen(['nnmsnmpwalk.ovpl',fqdn,oid], stdout=subprocess.PIPE)
                 out = r.stdout.read()
                 listaOID = out.split('\n')
                 for l in listaOID:
@@ -168,7 +189,8 @@ class OID(object):
         """
 	desc, index, value, soglia, stato, voce, testo = self.setNNMParamiter(indice_oid,valore,stato_rilevato)
         stato = self.mib_stato + ' octetstring "Reset"'
-	CMD = '/opt/OV/bin/nnmsnmpnotify.ovpl -v 2c "" -a {} {} {} {} {} {} {} {} {}'.format(self.fqdn, self.mib_generale, desc, index, value, soglia, stato, voce, testo)
+	#CMD = '/opt/OV/bin/nnmsnmpnotify.ovpl -v 2c "" -a {} {} {} {} {} {} {} {} {}'.format(self.fqdn, self.mib_generale, desc, index, value, soglia, stato, voce, testo)
+	CMD = '/opt/OV/bin/nnmsnmpnotify.ovpl -v 2c "" -a {} {} {} {} {} {} {} {} {}'.format(self.AppFQDN, self.mib_generale, desc, index, value, soglia, stato, voce, testo)
         print CMD
         # ---INVIO TRAP RESET--- #
         r = subprocess.Popen([CMD],shell=True )# stdout=subprocess.PIPE,)
@@ -181,7 +203,8 @@ class OID(object):
         @param stato_rilevato
         """
 	desc, index, value, soglia, stato, voce, testo = self.setNNMParamiter(indice_oid,valore,stato_rilevato)
-	CMD = '/opt/OV/bin/nnmsnmpnotify.ovpl -v 2c "" -a {} {} {} {} {} {} {} {} {}'.format(self.fqdn, self.mib_generale, desc, index, value, soglia, stato, voce, testo)
+	#CMD = '/opt/OV/bin/nnmsnmpnotify.ovpl -v 2c "" -a {} {} {} {} {} {} {} {} {}'.format(self.fqdn, self.mib_generale, desc, index, value, soglia, stato, voce, testo)
+	CMD = '/opt/OV/bin/nnmsnmpnotify.ovpl -v 2c "" -a {} {} {} {} {} {} {} {} {}'.format(self.AppFQDN, self.mib_generale, desc, index, value, soglia, stato, voce, testo)
         print CMD
         # ---INVIO TRAP ADD--- #
         r = subprocess.Popen([CMD],shell=True )# stdout=subprocess.PIPE,)
@@ -229,6 +252,8 @@ class OID(object):
             stato = self.mib_stato + ' octetstring "' + str(self.findStato(self.controlloSoglia(vv))).strip()+'"'
 
         elif 'CpuLoad' in str(indice_oid):
+            i = indice_oid.split('.')
+            index = self.mib_indice + ' octetstring "' + str(i[1]).strip()+'"'
             vv = self.extractValueLoad(valore)
             stato = self.mib_stato + ' octetstring "' + str(self.findStato(self.controlloSoglia(vv))).strip()+'"'
 
@@ -538,7 +563,7 @@ class OID(object):
 
     ####### END NORMALIZZA OID #######
 
-    def checkDiff(self):
+    def checkDiff(self,tmpFile):
         """
         controlla nel file di tmp il vecchio valore
         {'sysChassisTempTemperature.1 ':' 25'}
@@ -548,8 +573,10 @@ class OID(object):
 
         writeF=False					
         sendTrap=False
-        if os.path.isfile(self.tmp_file):		#se il file esiste eseguo l'import
-            f = open(self.tmp_file,'r')
+        #if os.path.isfile(self.tmp_file):		#se il file esiste eseguo l'import
+        if os.path.isfile(tmpFile):		#se il file esiste eseguo l'import
+            #f = open(self.tmp_file,'r')
+            f = open(tmpFile,'r')
             for line in f:
                 l=line.replace("\n","")
                 l=l.split(';')
@@ -577,14 +604,14 @@ class OID(object):
                     writeF=True
 
             if writeF:          		#eseguo update del file e l'invio delle trap
-                self.writeFile(self.changeOID)
+                self.writeFile(self.changeOID,tmpFile)
                 self.sendListaNNM(nnM)
 
         else:
             ######################
             # IL FILE NON ESISTE #
             #####################
-            self.writeFile(self.normOID)  #scrivo sul file per vedere le differenze con il prossimo controllo
+            self.writeFile(self.normOID,tmpFile)  #scrivo sul file per vedere le differenze con il prossimo controllo
             #for k,v in self.normOID.iteritems():
                 #self.sendNNM(k,v)
 
@@ -910,13 +937,15 @@ class OID(object):
         """
         elenco dei controlli da eseguire
         """
-        self.getOID()
-        self.normalOID()
-        #self.toCSV()
-        #self.fromCSV('dirname_loadBalancing.csv')
-        self.customLauncher(self.custom)
-        self.checkDiff()
-        for k,v in self.normOID.iteritems():
+        for fqdn in self.fqdn:
+            self.getOID(fqdn)
+            self.normalOID()
+            #self.toCSV()
+            #self.fromCSV('dirname_loadBalancing.csv')
+            self.customLauncher(self.custom)
+            self.AppFQDN = fqdn
+            self.checkDiff(self.getTmp_file(fqdn))
+            for k,v in self.normOID.iteritems():
                 print(k,v)
 
     def customLauncher(self,custom=None):
@@ -949,14 +978,15 @@ class OID(object):
         else:
             pass
 
-    def writeFile(self,normOID):
+    def writeFile(self,normOID,tmpFile):
         """
         scritture sul file
         fqdn; oid ;valore
         [ { 'FQDN': fqdn, 'OID': oid, 'VALUE':value}, ]
         @param: normOID
         """
-        f=open(self.tmp_file,'w')
+        #f=open(self.tmp_file,'w')
+        f=open(tmpFile,'w')
         for k,v in normOID.iteritems():
             f.write(k+";"+v+"\n")
         f.close()
